@@ -1,0 +1,1194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cymatics v2</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; font-family: system-ui, sans-serif; }
+  canvas { display: block; cursor: none; }
+  noscript { color: white; padding: 40px; display: block; }
+
+  #status {
+    position: fixed; bottom: 12px; left: 12px; z-index: 200;
+    color: rgba(255,255,255,0.12); font-size: 10px; letter-spacing: 1px;
+    font-family: monospace; pointer-events: none;
+  }
+  #error {
+    position: fixed; top: 40px; left: 40px; right: 40px; z-index: 300;
+    color: #ff6666; font-size: 14px; display: none;
+    font-family: monospace; background: rgba(0,0,0,0.9); padding: 20px; border: 1px solid #ff6666;
+  }
+
+  /* ── Start overlay ── */
+  #start-overlay {
+    position: fixed; inset: 0; z-index: 100;
+    pointer-events: none; /* only the mic button & drum are interactive */
+  }
+  #start-overlay.hidden { display: none; }
+  #start-hint {
+    position: fixed;
+    right: 56px;
+    bottom: 260px; /* just above the drum (drum is 180px tall at bottom:56) */
+    width: 180px; text-align: center;
+    pointer-events: none;
+  }
+  .drop-icon { font-size: 9px; letter-spacing: 3px; text-transform: uppercase; color: rgba(255,255,255,0.32); margin-bottom: 6px; }
+  .drop-hint { font-size: 8px; letter-spacing: 2px; text-transform: uppercase; color: rgba(255,255,255,0.18); }
+  #mic-btn {
+    position: fixed;
+    right: 56px;
+    bottom: 250px;
+    width: 180px; text-align: center;
+    display: none; /* hidden — hint above takes its place. Mic available via 'M' key or a small link below */
+  }
+  #mic-link {
+    position: fixed;
+    right: 56px;
+    bottom: 20px;
+    width: 180px; text-align: center;
+    z-index: 161;
+    font-size: 8px; letter-spacing: 3px; text-transform: uppercase;
+    color: rgba(255,255,255,0.18);
+    cursor: pointer; transition: color 0.3s;
+  }
+  #mic-link:hover { color: rgba(255,255,255,0.45); }
+  #mic-link.hidden { display: none; }
+
+  /* ── Mode flash ── */
+  #mode-label {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    z-index: 150; pointer-events: none;
+    font-size: 10px; letter-spacing: 6px; text-transform: uppercase;
+    color: rgba(255,255,255,0); font-family: system-ui, sans-serif;
+    transition: color 0.3s ease;
+  }
+  #mode-label.show { color: rgba(255,255,255,0.35); }
+  #mode-label.hide { color: rgba(255,255,255,0); transition: color 1.5s ease; }
+
+  /* ── Tracklist (left side) ── */
+  #tracklist {
+    position: fixed; left: 24px; top: 50%; transform: translateY(-50%);
+    z-index: 150; display: none; max-height: 70vh; overflow-y: auto;
+  }
+  #tracklist::-webkit-scrollbar { width: 0; }
+  .track-item {
+    padding: 6px 14px; margin: 2px 0; border-radius: 16px; cursor: pointer;
+    font-size: 9px; letter-spacing: 2px; text-transform: uppercase;
+    color: rgba(255,255,255,0.15); transition: all 0.3s; white-space: nowrap;
+    max-width: 200px; overflow: hidden; text-overflow: ellipsis;
+  }
+  .track-item:hover { color: rgba(255,255,255,0.35); background: rgba(255,255,255,0.03); }
+  .track-item.active {
+    color: rgba(255,255,255,0.45);
+    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.06);
+  }
+  .track-item.active::before { content: '▸ '; }
+
+  /* ── Bottom bar ── */
+  #bottom-bar {
+    position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
+    z-index: 150; display: none; align-items: center; gap: 14px;
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 30px; padding: 8px 20px;
+  }
+  .bb-btn {
+    cursor: pointer; width: 26px; height: 26px; border-radius: 50%;
+    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; color: rgba(255,255,255,0.25); transition: all 0.3s;
+  }
+  .bb-btn:hover { background: rgba(255,255,255,0.1); }
+  #bb-track {
+    font-size: 9px; letter-spacing: 2px; text-transform: uppercase;
+    color: rgba(255,255,255,0.25); max-width: 260px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #bb-mode {
+    font-size: 8px; letter-spacing: 3px; text-transform: uppercase;
+    color: rgba(255,255,255,0.18); padding-left: 10px;
+    border-left: 1px solid rgba(255,255,255,0.06);
+  }
+
+  /* ── Steel drum control (bottom right) ── */
+  #drum-wrap {
+    position: fixed;
+    right: 56px;
+    bottom: 56px;
+    width: 180px;
+    height: 180px;
+    z-index: 160;
+    cursor: pointer;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #drum-wrap.dragover #drum-dimple {
+    box-shadow:
+      inset 0 22px 30px -4px rgba(0,0,0,0.95),
+      inset 0 16px 20px rgba(0,0,0,0.7),
+      inset 0 -14px 22px rgba(255,255,255,0.08),
+      inset 0 -4px 8px rgba(255,255,255,0.05),
+      inset 0 0 0 1px rgba(255,255,255,0.06),
+      0 0 30px rgba(255,255,255,0.06);
+  }
+  /* shallow concave dimple — version B */
+  #drum-dimple {
+    position: absolute; inset: 0;
+    border-radius: 50%;
+    background:
+      radial-gradient(circle at 50% 82%, rgba(255,255,255,0.09) 0%, transparent 18%),
+      radial-gradient(ellipse 70% 45% at 50% 12%, rgba(0,0,0,0.7) 0%, transparent 50%),
+      radial-gradient(circle at 50% 25%, #060606 0%, #111 40%, #1c1c1c 75%, #252525 95%),
+      radial-gradient(ellipse 50% 25% at 50% 68%, rgba(255,255,255,0.05) 0%, transparent 60%);
+    box-shadow:
+      inset 0 16px 22px -4px rgba(0,0,0,0.8),
+      inset 0 10px 14px rgba(0,0,0,0.5),
+      inset 0 -10px 16px rgba(255,255,255,0.04),
+      inset 0 -3px 6px rgba(255,255,255,0.025),
+      inset 0 0 0 1px rgba(255,255,255,0.03),
+      0 1px 6px rgba(0,0,0,0.5);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+  }
+  #drum-wrap:hover #drum-dimple {
+    box-shadow:
+      inset 0 20px 28px -4px rgba(0,0,0,0.9),
+      inset 0 14px 18px rgba(0,0,0,0.6),
+      inset 0 -12px 20px rgba(255,255,255,0.055),
+      inset 0 -4px 8px rgba(255,255,255,0.035),
+      inset 0 0 0 1px rgba(255,255,255,0.04),
+      0 3px 12px rgba(0,0,0,0.6);
+  }
+  #drum-wrap.press #drum-dimple { transform: scale(0.985); }
+  #drum-glow {
+    position: absolute; width: 60%; height: 60%; border-radius: 50%;
+    top: 20%; left: 20%;
+    pointer-events: none;
+    opacity: 0;
+    mix-blend-mode: screen;
+    filter: blur(22px);
+    transition: opacity 0.4s ease;
+    background: radial-gradient(circle, rgba(255,255,255,0.35), transparent 60%);
+  }
+  #drum-wrap:hover #drum-glow { opacity: 0.9; }
+  #drum-svg {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    overflow: visible;
+  }
+  #drum-zone {
+    position: fixed;
+    right: 48px; bottom: 20px;
+    width: 180px; text-align: center;
+    font-size: 8px; letter-spacing: 3px; text-transform: uppercase;
+    color: rgba(255,255,255,0.35);
+    z-index: 161; pointer-events: none;
+    min-height: 10px;
+    transition: color 0.3s;
+  }
+</style>
+</head>
+<body>
+
+<noscript><p>JavaScript required. Open in Chrome or Firefox.</p></noscript>
+<div id="error"></div>
+<div id="status">loading...</div>
+<canvas id="c"></canvas>
+<div id="mode-label"></div>
+
+<div id="start-overlay">
+  <input type="file" id="drop-file-input" accept="audio/*" multiple style="display:none">
+  <div id="start-hint">
+    <div class="drop-icon">Drop your album on the drum</div>
+    <div class="drop-hint">or click it to select tracks</div>
+  </div>
+  <div id="mic-btn"><div id="mic-label">Use microphone</div></div>
+</div>
+
+<div id="tracklist"></div>
+
+<div id="bottom-bar">
+  <div class="bb-btn" id="bb-prev" title="Previous">&#9664;</div>
+  <div class="bb-btn" id="bb-pp" title="Play/Pause">&#9654;</div>
+  <div class="bb-btn" id="bb-next" title="Next">&#9654;</div>
+  <div id="bb-track"></div>
+  <div id="bb-mode">VOICE</div>
+</div>
+
+<div id="drum-wrap" aria-label="Control">
+  <div id="drum-dimple"></div>
+  <div id="drum-glow"></div>
+  <svg id="drum-svg" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
+    <g id="drum-leds"></g>
+    <g id="drum-ripples"></g>
+  </svg>
+</div>
+<div id="drum-zone">&nbsp;</div>
+<div id="mic-link">or use microphone</div>
+
+<script>
+try {
+
+// ═══════════════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════════════
+var RES = 500;
+var NUM_PARTICLES = 320000;
+var CTR = RES / 2;
+var RAD = RES / 2 - 4;
+var PI = Math.PI;
+
+// ── Square plate modes (geometric) — indices 0-9 ──
+var SQUARE = [
+  {n:2,m:3}, {n:2,m:5}, {n:3,m:4}, {n:3,m:5}, {n:3,m:7},
+  {n:4,m:5}, {n:4,m:7}, {n:5,m:6}, {n:5,m:8}, {n:6,m:9},
+];
+// ── Original circular plate (cos-based, same as cymatics.html) — indices 10-19 ──
+var CIRCLE_ORIG = [
+  {n:3,m:0}, {n:3,m:3}, {n:4,m:2}, {n:4,m:4}, {n:5,m:3},
+  {n:5,m:5}, {n:6,m:4}, {n:6,m:6}, {n:7,m:5}, {n:8,m:6},
+];
+// ── Bessel drum membrane modes (real cymatics) — indices 20-29 ──
+var CIRCLE_BESSEL = [
+  {m:0,  alpha:8},     // pure concentric rings
+  {m:3,  alpha:10},    // 3-petal with rings
+  {m:4,  alpha:10},    // 4-petal
+  {m:5,  alpha:12},    // 5-petal flower
+  {m:6,  alpha:12},    // 6-petal
+  {m:8,  alpha:14},    // 8-petal
+  {m:10, alpha:16},    // 10-petal
+  {m:12, alpha:16},    // 12-petal complex
+  {m:4,  alpha:20},    // 4-petal dense
+  {m:6,  alpha:20},    // 6-petal dense
+];
+// ── Organic patterns — indices 30-49 ──
+var ORGANIC = [
+  {n:1, m:0, style:'blob'},   {n:1, m:1, style:'blob'},
+  {n:1, m:2, style:'blob'},   {n:1, m:3, style:'blob'},
+  {n:1, m:4, style:'blob'},   {n:1, m:5, style:'blob'},
+  {n:1, m:6, style:'blob'},   {n:2, m:2, style:'blob'},
+  {n:2, m:3, style:'blob'},   {n:2, m:4, style:'blob'},
+  {n:1, m:2, style:'amoeba'}, {n:1, m:3, style:'amoeba'},
+  {n:1, m:4, style:'amoeba'}, {n:1, m:5, style:'amoeba'},
+  {n:2, m:3, style:'amoeba'},
+  {n:1, m:2, style:'dual'},   {n:1, m:3, style:'dual'},
+  {n:1, m:4, style:'dual'},   {n:2, m:2, style:'dual'},
+  {n:2, m:3, style:'dual'},
+];
+
+var TOTAL_PATTERNS = SQUARE.length + CIRCLE_ORIG.length + CIRCLE_BESSEL.length + ORGANIC.length; // 50
+
+var FILTER_MODES = [
+  { name:'VOICE', desc:'original vocals', pLo:0, pHi:9,        // square plate only (matches cymatics.html)
+    f1:{type:'peaking',freq:1000,Q:0.5,gain:0}, f2:{type:'peaking',freq:3000,Q:0.5,gain:0}, f3:{type:'peaking',freq:100,Q:0.5,gain:0} },
+  { name:'RIPPLE', desc:'circular waves', pLo:20, pHi:29,      // Bessel drum membrane
+    f1:{type:'lowpass',freq:280,Q:3}, f2:{type:'peaking',freq:80,Q:1.5,gain:15}, f3:{type:'peaking',freq:150,Q:2,gain:10} },
+  { name:'WARM', desc:'strings', pLo:0, pHi:9,                 // square plate (same as VOICE)
+    f1:{type:'peaking',freq:500,Q:1.2,gain:8}, f2:{type:'lowpass',freq:2500,Q:1}, f3:{type:'peaking',freq:800,Q:1.5,gain:6} },
+  { name:'BLOOM', desc:'crystal rings', pLo:20, pHi:29,        // Bessel
+    f1:{type:'highpass',freq:1200,Q:1.5}, f2:{type:'peaking',freq:4000,Q:2,gain:12}, f3:{type:'peaking',freq:8000,Q:2,gain:10} },
+  { name:'PULSE', desc:'organic flow', pLo:30, pHi:49,         // organic blobs
+    f1:{type:'bandpass',freq:200,Q:4}, f2:{type:'peaking',freq:100,Q:5,gain:18}, f3:{type:'lowpass',freq:350,Q:3} },
+];
+var currentFilterIdx = 0;
+
+// ── Color tint per filter mode ──
+var MODE_TINT = [
+  {r:1.0, g:0.95, b:0.85},   // VOICE — warm sand
+  {r:0.85, g:0.92, b:1.0},   // RIPPLE — cool sand
+  {r:1.0, g:0.93, b:0.82},   // WARM — golden sand
+  {r:0.92, g:0.95, b:1.0},   // BLOOM — pale blue-white
+  {r:0.95, g:0.88, b:0.82},  // PULSE — warm
+];
+
+// Square plate Chladni equation
+function chladniSquare(x,y,n,m) {
+  return Math.cos(n*PI*x)*Math.cos(m*PI*y) - Math.cos(m*PI*x)*Math.cos(n*PI*y);
+}
+
+// ── Bessel function J_m(x) — series approximation ──
+// This is what real circular drum membranes use.
+// Rings get closer together toward the edge (non-uniform spacing),
+// and amplitude decays outward — just like real cymatics.
+function besselJ(order, x) {
+  var halfx = x / 2;
+  var term = 1;
+  for (var i = 1; i <= order; i++) term = term * halfx / i;
+  var sum = term;
+  var halfx2neg = -(halfx * halfx);
+  for (var k = 1; k <= 25; k++) {
+    term = term * halfx2neg / (k * (k + order));
+    sum += term;
+    if (Math.abs(term) < 1e-12) break;
+  }
+  return sum;
+}
+
+// Original circular plate (cos-based, from cymatics.html)
+function chladniCircleOrig(x,y,n,m) {
+  var dx=x-0.5, dy=y-0.5;
+  var r=Math.sqrt(dx*dx+dy*dy)*2.2;
+  var theta=Math.atan2(dy,dx);
+  return Math.cos(n*PI*r) * (m===0 ? 1.0 : Math.cos(m*theta));
+}
+
+// Bessel drum membrane mode: J_m(alpha * r) * cos(m * theta)
+function chladniCircleBessel(x, y, m, alpha) {
+  var dx = x - 0.5, dy = y - 0.5;
+  var r = Math.sqrt(dx*dx + dy*dy) * 2.0; // 0 at center, ~1 at edge
+  var theta = Math.atan2(dy, dx);
+  var radial = besselJ(m, alpha * r);
+  var angular = m === 0 ? 1.0 : Math.cos(m * theta);
+  return radial * angular;
+}
+
+// ── Organic pattern equations ──
+function patBlob(x, y, n, m) {
+  var dx = x - 0.5, dy = y - 0.5;
+  var r = Math.sqrt(dx*dx + dy*dy) * 2.0;
+  var theta = Math.atan2(dy, dx);
+  var radial = Math.cos(n * PI * r * 0.5);
+  if (m === 0) return radial;
+  if (m === 1) {
+    var dx2 = x - 0.58, dy2 = y - 0.45;
+    var r2 = Math.sqrt(dx2*dx2 + dy2*dy2) * 2.0;
+    return Math.cos(PI * r2 * 0.5) * 0.7 + radial * 0.3;
+  }
+  var angular = Math.cos(m * theta);
+  return radial * (1.0 + angular * 0.4 * Math.min(r * 2.0, 1.0));
+}
+function patAmoeba(x, y, n, m) {
+  var dx = x - 0.5, dy = y - 0.5;
+  var r = Math.sqrt(dx*dx + dy*dy) * 2.0;
+  var theta = Math.atan2(dy, dx);
+  var warpedR = r + 0.08 * Math.sin(m * theta + 1.0) + 0.05 * Math.sin((m+1) * theta * 0.7);
+  var radial = Math.cos(n * PI * warpedR * 0.5);
+  var angular = Math.cos(m * theta + 0.3 * r);
+  return radial * (1.0 + angular * 0.35 * Math.min(r * 2.0, 1.0));
+}
+function patDual(x, y, n, m) {
+  var dx = x - 0.5, dy = y - 0.5;
+  var ang = PI * 2 / Math.max(m, 2);
+  var off = 0.2;
+  var dx1 = dx - Math.cos(ang)*off, dy1 = dy - Math.sin(ang)*off;
+  var dx2 = dx + Math.cos(ang)*off, dy2 = dy + Math.sin(ang)*off;
+  var r1 = Math.sqrt(dx1*dx1 + dy1*dy1) * 2.0;
+  var r2 = Math.sqrt(dx2*dx2 + dy2*dy2) * 2.0;
+  var w1 = Math.cos(n * PI * r1 * 0.5);
+  var w2 = Math.cos(n * PI * r2 * 0.5);
+  return Math.max(w1, w2) * 0.6 + (w1 + w2) * 0.2;
+}
+function organicFunc(style) {
+  if (style === 'blob') return patBlob;
+  if (style === 'amoeba') return patAmoeba;
+  if (style === 'dual') return patDual;
+  return patBlob;
+}
+
+function setStatus(msg) { document.getElementById('status').textContent = msg; }
+function showError(msg) { var e=document.getElementById('error'); e.style.display='block'; e.textContent=msg; }
+
+// ═══════════════════════════════════════════════════
+// PRE-COMPUTE — Chladni + organic patterns
+// ═══════════════════════════════════════════════════
+setStatus('computing patterns...');
+var patDens=[], flowX=[], flowY=[];
+
+function computePattern(densFunc, sharpness) {
+  var sharp = sharpness || 50;
+  var d=new Float32Array(RES*RES);
+  for (var py=0;py<RES;py++) for (var px=0;px<RES;px++) {
+    var v=densFunc(px/(RES-1),py/(RES-1));
+    d[py*RES+px]=Math.exp(-v*v*sharp);
+  }
+  patDens.push(d);
+  var fx=new Float32Array(RES*RES), fy=new Float32Array(RES*RES);
+  for (var py=1;py<RES-1;py++) for (var px=1;px<RES-1;px++) {
+    var i=py*RES+px, dx=d[i+1]-d[i-1], dy=d[i+RES]-d[i-RES];
+    var len=Math.sqrt(dx*dx+dy*dy)+0.0001; fx[i]=dx/len; fy[i]=dy/len;
+  }
+  flowX.push(fx); flowY.push(fy);
+}
+
+// Square plate patterns (indices 0-9)
+for (var p=0;p<SQUARE.length;p++) {
+  (function(n,m){ computePattern(function(x,y){return chladniSquare(x,y,n,m);}, 50); })(SQUARE[p].n, SQUARE[p].m);
+}
+// Original circular plate patterns (indices 10-19) — same as cymatics.html
+for (var p=0;p<CIRCLE_ORIG.length;p++) {
+  (function(n,m){ computePattern(function(x,y){return chladniCircleOrig(x,y,n,m);}, 50); })(CIRCLE_ORIG[p].n, CIRCLE_ORIG[p].m);
+}
+// Bessel drum membrane patterns (indices 20-29) — sharp, real cymatics
+for (var p=0;p<CIRCLE_BESSEL.length;p++) {
+  (function(m,alpha){ computePattern(function(x,y){return chladniCircleBessel(x,y,m,alpha);}, 80); })(CIRCLE_BESSEL[p].m, CIRCLE_BESSEL[p].alpha);
+}
+// Organic patterns (indices 30-49) — softer lines
+for (var p=0; p<ORGANIC.length; p++) {
+  (function(cfg){
+    var fn = organicFunc(cfg.style);
+    computePattern(function(x,y){ return fn(x, y, cfg.n, cfg.m); }, 15);
+  })(ORGANIC[p]);
+}
+setStatus('ready — ' + TOTAL_PATTERNS + ' patterns');
+
+// ═══════════════════════════════════════════════════
+// PARTICLES
+// ═══════════════════════════════════════════════════
+var pX=new Float32Array(NUM_PARTICLES), pY=new Float32Array(NUM_PARTICLES);
+var pSz=new Float32Array(NUM_PARTICLES), pW=new Float32Array(NUM_PARTICLES);
+function spawn(i) {
+  var a=Math.random()*PI*2, r=Math.sqrt(Math.random())*RAD;
+  pX[i]=CTR+Math.cos(a)*r; pY[i]=CTR+Math.sin(a)*r;
+}
+for (var i=0;i<NUM_PARTICLES;i++) { spawn(i); pSz[i]=0.2+Math.random()*1.1; pW[i]=0.88+Math.random()*0.24; }
+
+// ═══════════════════════════════════════════════════
+// CANVAS + BUFFERS
+// ═══════════════════════════════════════════════════
+var canvas=document.getElementById('c'), ctx=canvas.getContext('2d'), W, H;
+var buf=document.createElement('canvas'); buf.width=RES; buf.height=RES;
+var bCtx=buf.getContext('2d'), bImg=bCtx.createImageData(RES,RES);
+var GR=Math.floor(RES/4);
+var gBuf=document.createElement('canvas'); gBuf.width=GR; gBuf.height=GR;
+var gCtx=gBuf.getContext('2d');
+var pR=new Float32Array(RES*RES), pG=new Float32Array(RES*RES), pB=new Float32Array(RES*RES);
+var aR=new Float32Array(RES*RES), aG=new Float32Array(RES*RES), aB=new Float32Array(RES*RES);
+function resize() { W=canvas.width=window.innerWidth; H=canvas.height=window.innerHeight; }
+resize(); window.addEventListener('resize', resize);
+
+// ═══════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════
+var started=false, definition=0, targetDef=0, patIdx=0, targetPatIdx=0;
+var audioEnergy=0, frameCount=0;
+var prevSpectrum=null, spectralFlux=0, smoothFlux=0;
+var patternAccum=0; // slow accumulator that always advances
+var mSX=-100, mSY=-100, mBX=-100, mBY=-100, trail=[];
+var analyser=null, freqData=null, audioCtx=null;
+var smoothB={bass:0,low:0,mid:0,high:0};
+var audioEl=null, audioMode=null;
+var bq1=null, bq2=null, bq3=null;
+var mediaSource=null;
+
+var prevBandRatio = 0;    // for micro-variation tracking in audio analysis
+
+// ── Dynamic pattern: beat tracking + jump detection ──
+var beatPhase = 0;
+var beatRate = 0;
+var prevBassHit = 0;
+var bassHitInterval = 30;
+var snapPatIdx = -1;
+var patOscillateAmt = 0;
+var prevEnergy = 0;
+var energyJumpCooldown = 0;
+
+// ── Scatter bursts — natural "restart" moments ──
+// When audio hits a big peak, a fraction of particles get respawned to random
+// positions on the plate. Feels like the system keeps gently re-chladnying itself.
+var scatterFraction = 0;   // 0..1, ramps up on big events, decays otherwise
+
+// ── Playlist ──
+var playlist = [];       // [{file, name, url}]
+var currentTrack = -1;
+
+// ═══════════════════════════════════════════════════
+// MOUSE
+// ═══════════════════════════════════════════════════
+canvas.addEventListener('mousemove', function(e) {
+  mSX=e.clientX; mSY=e.clientY;
+  trail.push({x:e.clientX,y:e.clientY,age:0});
+  if (trail.length>40) trail.shift();
+});
+canvas.addEventListener('mouseleave', function() {
+  mSX=-100;mSY=-100;mBX=-100;mBY=-100;
+  if(pressTimer){clearTimeout(pressTimer);pressTimer=null;}
+});
+
+// ── Long press to reset sand, short click to cycle filter ──
+var pressTimer=null, pressStart=0, didLongPress=false;
+var LONG_PRESS_MS=500;
+var resetShake=0; // 0-1, drives the scatter animation
+
+function resetSand() {
+  for(var i=0;i<NUM_PARTICLES;i++) spawn(i);
+  resetShake=1;
+  var lbl=document.getElementById('mode-label');
+  lbl.textContent='RESET'; lbl.className='show';
+  setTimeout(function(){lbl.className='hide';},600);
+}
+
+// Center canvas button removed — steel drum (bottom-right) handles these actions now.
+
+// ═══════════════════════════════════════════════════
+// AUDIO — filters, mic, file, playlist
+// ═══════════════════════════════════════════════════
+function makeFilters() {
+  bq1=audioCtx.createBiquadFilter();
+  bq2=audioCtx.createBiquadFilter();
+  bq3=audioCtx.createBiquadFilter();
+  applyPreset(FILTER_MODES[currentFilterIdx]);
+}
+function applyPreset(p) {
+  var t=audioCtx.currentTime;
+  setBQ(bq1,p.f1,t); setBQ(bq2,p.f2,t); setBQ(bq3,p.f3,t);
+}
+function setBQ(nd,cfg,t) {
+  nd.type=cfg.type;
+  nd.frequency.setTargetAtTime(cfg.freq,t,0.08);
+  nd.Q.setTargetAtTime(cfg.Q||1,t,0.08);
+  nd.gain.setTargetAtTime(cfg.gain||0,t,0.08);
+}
+function cycleFilter() {
+  var prevIdx = currentFilterIdx;
+  currentFilterIdx = (currentFilterIdx+1) % FILTER_MODES.length;
+  var p = FILTER_MODES[currentFilterIdx];
+  applyPreset(p);
+  targetPatIdx = p.pLo + Math.floor((p.pHi - p.pLo) * 0.3);
+  patIdx = targetPatIdx;
+  var lbl=document.getElementById('mode-label');
+  lbl.textContent=p.name; lbl.className='show';
+  setTimeout(function(){lbl.className='hide';},800);
+  document.getElementById('bb-mode').textContent=p.name;
+  setStatus(p.name.toLowerCase()+' — '+p.desc);
+}
+
+function makeAnalyser() {
+  analyser=audioCtx.createAnalyser();
+  analyser.fftSize=2048; analyser.smoothingTimeConstant=0.4;
+  analyser.minDecibels=-90; analyser.maxDecibels=-10;
+  freqData=new Uint8Array(analyser.frequencyBinCount);
+}
+
+// ── Load & play a track by index ──
+function playTrack(idx) {
+  if (idx<0||idx>=playlist.length) return;
+  currentTrack=idx;
+
+  // Highlight in tracklist
+  var items=document.querySelectorAll('.track-item');
+  for (var i=0;i<items.length;i++) items[i].classList.toggle('active',i===idx);
+
+  var entry=playlist[idx];
+  document.getElementById('bb-track').textContent=entry.name;
+  document.getElementById('bb-pp').innerHTML='&#10074;&#10074;';
+
+  if (!audioCtx) {
+    audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+    makeFilters(); makeAnalyser();
+  }
+
+  // If already playing, disconnect old source
+  if (mediaSource) { try{mediaSource.disconnect();}catch(e){} }
+  if (audioEl) { audioEl.pause(); audioEl.src=''; }
+
+  audioEl=new Audio();
+  audioEl.src=entry.url;
+
+  audioEl.addEventListener('canplaythrough', function() {
+    mediaSource=audioCtx.createMediaElementSource(audioEl);
+    mediaSource.connect(bq1); bq1.connect(bq2); bq2.connect(bq3);
+    bq3.connect(analyser); analyser.connect(audioCtx.destination);
+    audioMode='file';
+    audioEl.play();
+    if (audioCtx.state==='suspended') audioCtx.resume();
+  }, {once:true});
+
+  audioEl.addEventListener('ended', function() {
+    // Auto-advance to next track
+    if (currentTrack < playlist.length-1) {
+      playTrack(currentTrack+1);
+    } else {
+      document.getElementById('bb-pp').innerHTML='&#9654;';
+      setStatus('album finished');
+    }
+  });
+}
+
+function initMic() {
+  return navigator.mediaDevices.getUserMedia({
+    audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:true}
+  }).then(function(stream) {
+    audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+    var src=audioCtx.createMediaStreamSource(stream);
+    var gain=audioCtx.createGain(); gain.gain.value=8;
+    makeFilters(); makeAnalyser();
+    src.connect(gain); gain.connect(bq1); bq1.connect(bq2); bq2.connect(bq3); bq3.connect(analyser);
+    audioMode='mic'; return true;
+  }).catch(function(e){ showError('Mic: '+e.message); return false; });
+}
+
+function togglePlay() {
+  if (!audioEl) return;
+  if (audioEl.paused) { audioEl.play(); document.getElementById('bb-pp').innerHTML='&#10074;&#10074;'; }
+  else { audioEl.pause(); document.getElementById('bb-pp').innerHTML='&#9654;'; }
+}
+function prevTrack() { if (currentTrack>0) playTrack(currentTrack-1); }
+function nextTrack() { if (currentTrack<playlist.length-1) playTrack(currentTrack+1); }
+
+function updateAudio() {
+  if (!analyser) return;
+  analyser.getByteFrequencyData(freqData);
+  var bw=audioCtx.sampleRate/analyser.fftSize;
+  function en(lo,hi) {
+    var s=0,pk=0,si=Math.floor(lo/bw),ei=Math.min(Math.floor(hi/bw),freqData.length),c=Math.max(1,ei-si);
+    for(var i=si;i<ei;i++){s+=freqData[i];if(freqData[i]>pk)pk=freqData[i];}
+    return Math.pow((s/c/255)*0.3+(pk/255)*0.7,0.5);
+  }
+  // 6 bands tuned for vocal music
+  var b={bass:en(20,120),low:en(120,250),vowel:en(250,500),mid:en(500,2000),pres:en(2000,6000),high:en(6000,12000)};
+  var ks=['bass','low','vowel','mid','pres','high'];
+  for(var k=0;k<ks.length;k++){var key=ks[k];
+    if(!smoothB[key])smoothB[key]=0;
+    // Faster decay (0.12 vs 0.05) — visuals respond quicker to drops
+    var r=b[key]>smoothB[key]?0.28:0.12;smoothB[key]+=(b[key]-smoothB[key])*r;}
+
+  // ── Spectral flux ──
+  spectralFlux = 0;
+  if (prevSpectrum) {
+    for (var i=0; i<freqData.length; i+=2) {
+      var diff = freqData[i] - prevSpectrum[i];
+      if (diff > 0) spectralFlux += diff;
+    }
+    spectralFlux = spectralFlux / (freqData.length/2) / 255;
+  }
+  if (!prevSpectrum) prevSpectrum = new Uint8Array(freqData.length);
+  prevSpectrum.set(freqData);
+  smoothFlux += (spectralFlux - smoothFlux) * 0.25;
+
+  var e=(smoothB.bass+smoothB.low*1.2+smoothB.vowel*1.8+smoothB.mid*1.4+smoothB.pres*0.6+smoothB.high*0.3)/4.5;
+  var sens=(audioMode==='file')?2.2:4.0;
+  audioEnergy=e;
+  targetDef=Math.min(e*sens,1);
+
+  // ── Pattern selection within current mode's range ──
+  var mode = FILTER_MODES[currentFilterIdx];
+  var pLo = mode.pLo, pHi = mode.pHi;
+  var pRange = pHi - pLo;
+
+  // 1. Spectral centroid drives base pattern
+  var tot=smoothB.bass+smoothB.low+smoothB.vowel+smoothB.mid+smoothB.pres+smoothB.high+0.001;
+  var cent=(smoothB.bass*0+smoothB.low*1+smoothB.vowel*2.5+smoothB.mid*4+smoothB.pres*5.5+smoothB.high*6.5)/tot;
+  var centNorm = cent / 6.5;
+  var basePat = centNorm * pRange;
+
+  // 2. Energy scaling — louder = more complex pattern
+  var energyShift = Math.pow(audioEnergy * sens, 0.6) * pRange * 0.3;
+
+  // 3. Breathing drift — prevents stale states
+  var breathe = Math.sin(frameCount*0.003)*pRange*0.08
+               +Math.sin(frameCount*0.008)*pRange*0.05
+               +Math.cos(frameCount*0.0012)*pRange*0.1;
+
+  // 4. Flux accumulator — continuous drift from spectral change
+  patternAccum += smoothFlux * 3.5;
+  var fluxDrift = Math.sin(patternAccum) * pRange * 0.13;
+
+  // ── Combine into target ──
+  var rawTarget = basePat + energyShift + breathe + fluxDrift;
+  targetPatIdx = pLo + Math.max(0, Math.min(rawTarget, pRange));
+
+  // ── Beat tracking — bass transients drive rhythmic oscillation ──
+  var bassRaw = b.bass;
+  if (bassRaw > 0.45 && (frameCount - prevBassHit) > 8) {
+    var interval = frameCount - prevBassHit;
+    if (interval > 6 && interval < 120) {
+      bassHitInterval = bassHitInterval * 0.7 + interval * 0.3;
+    }
+    prevBassHit = frameCount;
+    patOscillateAmt = Math.min(3.5, patOscillateAmt + 0.8);
+  }
+  patOscillateAmt *= 0.97;
+  beatRate = 1.0 / Math.max(10, bassHitInterval);
+  beatPhase += beatRate;
+  if (beatPhase > 1) beatPhase -= 1;
+
+  var oscillation = Math.sin(beatPhase * PI * 2) * patOscillateAmt;
+  targetPatIdx = pLo + Math.max(0, Math.min(targetPatIdx - pLo + oscillation, pRange));
+
+  // ── Big moment detection — snap on dramatic changes ──
+  if (energyJumpCooldown > 0) energyJumpCooldown--;
+  var energyDelta = audioEnergy - prevEnergy;
+  prevEnergy = audioEnergy;
+
+  if (energyJumpCooldown === 0) {
+    if (energyDelta > 0.15 || spectralFlux > 0.18) {
+      var jumpOffset = Math.floor(pRange * 0.4) + Math.floor(centNorm * pRange * 0.4);
+      snapPatIdx = pLo + ((Math.floor(patIdx - pLo) + jumpOffset) % (pRange + 1));
+      energyJumpCooldown = 45;
+      scatterFraction = Math.min(1, scatterFraction + 0.5);
+    }
+  }
+  if (energyDelta < -0.12 && energyJumpCooldown === 0) {
+    snapPatIdx = pLo + Math.floor(Math.random() * Math.min(4, pRange + 1));
+    energyJumpCooldown = 60;
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// UPDATE PARTICLES
+// ═══════════════════════════════════════════════════
+function updateParticles() {
+  var lo=Math.floor(patIdx), hi=Math.min(lo+1,TOTAL_PATTERNS-1), bl=patIdx-lo;
+  var fxL=flowX[lo],fyL=flowY[lo],fxH=flowX[hi],fyH=flowY[hi];
+  var dL=patDens[lo],dH=patDens[hi];
+
+  // Very gentle flow — pattern is shown via brightness, not particle clustering
+  var spd=definition*0.5;
+  var jit=audioEnergy*0.6;
+  // Strong turbulence keeps particles spread across entire plate
+  var turb=0.7+audioEnergy*0.6;
+  // Idle drift
+  var idle=(1-definition)*0.4;
+  // Organic noise time offset
+  var t1=frameCount*0.003, t2=frameCount*0.004, t3=frameCount*0.002;
+
+  var ps=Math.min(W,H)*0.85, sCX=W/2,sCY=H/2,sR=ps/2;
+  if(mSX>0){mBX=(mSX-sCX+sR)/ps*RES;mBY=(mSY-sCY+sR)/ps*RES;}else{mBX=-100;mBY=-100;}
+  var mR=RES*0.12, mA=mBX>0&&mBY>0;
+
+  // ── Soft edge containment: only pull inward when near the rim ──
+  // This replaces the old global centripetal pull (which caused center pile-up).
+  // Particles in the interior move freely; only the outer 15% gets a restoring force.
+  var softR = RAD * 0.85;
+  var softRange = RAD - softR;
+
+  for(var i=0;i<NUM_PARTICLES;i++){
+    var x=pX[i],y=pY[i],gx=Math.floor(x),gy=Math.floor(y);
+    if(gx<1||gx>=RES-1||gy<1||gy>=RES-1){spawn(i);continue;}
+    var idx=gy*RES+gx;
+    var fx=fxL[idx]*(1-bl)+fxH[idx]*bl, fy=fyL[idx]*(1-bl)+fyH[idx]*bl;
+    var d=dL[idx]*(1-bl)+dH[idx]*bl;
+    // Very gentle drift toward lines — enough to see motion, not enough to cluster
+    var ms=(1-d)*spd;
+
+    // Organic distortion
+    var orgX=Math.sin(x*0.015+t1)*0.5+Math.cos(y*0.02+t3)*0.25;
+    var orgY=Math.cos(y*0.015+t2)*0.5+Math.sin(x*0.018+t1)*0.25;
+
+    // Turbulence dominates — particles stay spread across the plate
+    var dx=fx*ms+orgX*definition*0.5+(Math.random()-0.5)*(turb+jit+idle);
+    var dy=fy*ms+orgY*definition*0.5+(Math.random()-0.5)*(turb+jit+idle);
+
+    // ── Soft edge containment (only near the rim) ──
+    var ox=x-CTR, oy=y-CTR, dist=Math.sqrt(ox*ox+oy*oy);
+    if (dist > softR) {
+      var overshoot = (dist - softR) / softRange; // 0..1 over the outer ring
+      var pullStrength = overshoot * overshoot * 0.6;
+      dx -= (ox/dist) * pullStrength;
+      dy -= (oy/dist) * pullStrength;
+    }
+
+    // Mouse: push particles away
+    if(mA){var mx=x-mBX,my=y-mBY,mD=Math.sqrt(mx*mx+my*my);
+      if(mD<mR&&mD>0.1){var push=(1-mD/mR)*(1-mD/mR)*6;dx+=(mx/mD)*push;dy+=(my/mD)*push;}}
+    x+=dx;y+=dy;
+    var ox2=x-CTR, oy2=y-CTR, d2=Math.sqrt(ox2*ox2+oy2*oy2);
+    if(d2>RAD){x=CTR+(ox2/d2)*(RAD-0.5);y=CTR+(oy2/d2)*(RAD-0.5);}
+    pX[i]=x;pY[i]=y;
+  }
+
+  // ── Natural scatter: randomly respawn a small fraction of particles ──
+  // This gives the "restart" feeling continuously, scaled by musical events.
+  if (scatterFraction > 0.001) {
+    var nScatter = Math.floor(NUM_PARTICLES * scatterFraction * 0.02);
+    for (var s=0; s<nScatter; s++) {
+      spawn(Math.floor(Math.random() * NUM_PARTICLES));
+    }
+    scatterFraction *= 0.92; // decay
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// RENDER PARTICLES
+// ═══════════════════════════════════════════════════
+function renderParticles() {
+  var len=RES*RES;
+  // Persistence: subtle trails
+  var per = 0.18;
+  for(var i=0;i<len;i++){aR[i]=pR[i]*per;aG[i]=pG[i]*per;aB[i]=pB[i]*per;}
+
+  // Color tinting — based on filter mode
+  var tint=MODE_TINT[currentFilterIdx]||MODE_TINT[0];
+  var tR=tint.r, tG=tint.g, tB=tint.b;
+  var sizeMul = 0.55;
+
+  // ── Splat particles with brightness modulation from pattern density ──
+  // Pattern is shown through BRIGHTNESS not clustering — sand covers entire plate
+  var lo2=Math.floor(patIdx),hi2=Math.min(lo2+1,TOTAL_PATTERNS-1),bl2=patIdx-lo2;
+  var dL2=patDens[lo2],dH2=patDens[hi2];
+  var defBright=definition*0.85; // how much the pattern affects brightness
+
+  for(var i=0;i<NUM_PARTICLES;i++){
+    var x=pX[i],y=pY[i],gx=Math.floor(x),gy=Math.floor(y);
+    if(gx<0||gx>=RES-1||gy<0||gy>=RES-1)continue;
+    var idx2=gy*RES+gx;
+    // Pattern density at this particle's position (1=nodal line, 0=antinode)
+    var d2=dL2[idx2]*(1-bl2)+dH2[idx2]*bl2;
+    // Brightness: base level everywhere + boost on nodal lines
+    var bright=0.45+d2*defBright;
+
+    var fx=x-gx,fy=y-gy,s=pSz[i]*sizeMul*bright,w=pW[i];
+    var r=s*tR,g=s*(0.95*w)*tG,b=s*(0.85*w)*tB;
+    var w00=(1-fx)*(1-fy),w10=fx*(1-fy),w01=(1-fx)*fy,w11=fx*fy;
+    var i00=gy*RES+gx,i10=i00+1,i01=i00+RES,i11=i01+1;
+    aR[i00]+=r*w00;aG[i00]+=g*w00;aB[i00]+=b*w00;
+    aR[i10]+=r*w10;aG[i10]+=g*w10;aB[i10]+=b*w10;
+    aR[i01]+=r*w01;aG[i01]+=g*w01;aB[i01]+=b*w01;
+    aR[i11]+=r*w11;aG[i11]+=g*w11;aB[i11]+=b*w11;
+  }
+
+  pR.set(aR);pG.set(aG);pB.set(aB);
+
+  // ── Final color curve ──
+  var data=bImg.data;
+  var brightMul=340;
+  for(var i=0;i<len;i++){
+    var rv=aR[i];rv=(rv*rv*0.4+rv*0.7);rv=rv*brightMul;if(rv>255)rv=255;
+    var gv=aG[i];gv=(gv*gv*0.4+gv*0.7);gv=gv*brightMul;if(gv>255)gv=255;
+    var bv=aB[i];bv=(bv*bv*0.4+bv*0.7);bv=bv*brightMul;if(bv>255)bv=255;
+    var idx=i*4;data[idx]=rv;data[idx+1]=gv;data[idx+2]=bv;data[idx+3]=255;
+  }
+  bCtx.putImageData(bImg,0,0);
+}
+
+// ═══════════════════════════════════════════════════
+// MAIN RENDER
+// ═══════════════════════════════════════════════════
+function render() {
+  frameCount++;
+  if(resetShake>0) resetShake*=0.93;
+  definition+=(targetDef-definition)*0.14;
+
+  if(started)updateAudio();
+
+  // Handle snap jumps — big moments get instant pattern changes
+  if (snapPatIdx >= 0) {
+    patIdx = snapPatIdx;
+    targetPatIdx = snapPatIdx;
+    snapPatIdx = -1;
+  }
+
+  // Faster base transition + even faster when audio is active
+  var patSpeed = 0.07 + smoothFlux * 0.4;
+  patIdx+=(targetPatIdx-patIdx)*patSpeed;
+
+  // Natural scatter trigger — lowered threshold
+  if (started && spectralFlux > 0.07) {
+    scatterFraction = Math.min(1, scatterFraction + spectralFlux * 0.8);
+  }
+
+  if(frameCount>5) updateParticles();
+
+  var nt=[];
+  for(var t=0;t<trail.length;t++){trail[t].age+=0.016;if(trail[t].age<2)nt.push(trail[t]);}
+  trail=nt;
+  renderParticles();
+
+  ctx.fillStyle='#000'; ctx.fillRect(0,0,W,H);
+  var ps=Math.min(W,H)*0.85, cx=W/2, cy=H/2, rad=ps/2;
+
+  ctx.save();
+  ctx.beginPath();ctx.arc(cx,cy,rad,0,PI*2);ctx.clip();
+  ctx.fillStyle='#050505';ctx.fillRect(cx-rad,cy-rad,ps,ps);
+
+  // Sand particles
+  gCtx.drawImage(buf,0,0,GR,GR);
+  ctx.globalAlpha=0.45;ctx.drawImage(gBuf,cx-rad,cy-rad,ps,ps);
+  ctx.globalAlpha=1;
+  ctx.drawImage(buf,cx-rad,cy-rad,ps,ps);
+  ctx.restore();
+
+  // Rim
+  ctx.beginPath();ctx.arc(cx,cy,rad,0,PI*2);
+  ctx.strokeStyle='rgba(255,255,255,0.05)';ctx.lineWidth=1.5;ctx.stroke();
+
+  // Inner shadow
+  ctx.save();ctx.beginPath();ctx.arc(cx,cy,rad,0,PI*2);ctx.clip();
+  var rim=ctx.createRadialGradient(cx,cy,rad*0.88,cx,cy,rad);
+  rim.addColorStop(0,'rgba(0,0,0,0)');rim.addColorStop(1,'rgba(0,0,0,0.35)');
+  ctx.fillStyle=rim;ctx.fillRect(cx-rad,cy-rad,ps,ps);ctx.restore();
+
+  // Center button removed — controls moved to steel drum in bottom-right.
+  var bR = 0; // kept so cursor math below stays valid
+
+  // Cursor
+  if(mSX>0&&mSY>0){
+    var dx=mSX-cx,dy=mSY-cy;
+    var onPlate=(dx*dx+dy*dy)<rad*rad;
+    if(false){
+      // no center button anymore
+    } else if(onPlate){
+      ctx.beginPath();ctx.arc(mSX,mSY,ps*0.022,0,PI*2);
+      ctx.fillStyle='rgba(0,0,0,0.4)';ctx.fill();
+    } else {
+      ctx.beginPath();ctx.arc(mSX,mSY,3,0,PI*2);
+      ctx.fillStyle='rgba(255,255,255,0.12)';ctx.fill();
+    }
+  }
+
+  if(frameCount<60)setStatus('rendering...');
+  else if(frameCount===60&&!started)setStatus('drop an album or use mic');
+  requestAnimationFrame(render);
+}
+
+// ═══════════════════════════════════════════════════
+// UI — start, playlist
+// ═══════════════════════════════════════════════════
+var fileInput=document.getElementById('drop-file-input');
+var tracklistEl=document.getElementById('tracklist');
+var bottomBar=document.getElementById('bottom-bar');
+
+function buildPlaylist(files) {
+  // Sort files alphabetically (album track order usually works)
+  var arr=[];
+  for(var i=0;i<files.length;i++){
+    if(files[i].type.startsWith('audio/')||files[i].name.match(/\.(mp3|wav|ogg|m4a|flac|aac)$/i)){
+      arr.push(files[i]);
+    }
+  }
+  arr.sort(function(a,b){return a.name.localeCompare(b.name);});
+
+  playlist=[];
+  tracklistEl.innerHTML='';
+  for(var i=0;i<arr.length;i++){
+    var name=arr[i].name.replace(/\.[^.]+$/,'');
+    var url=URL.createObjectURL(arr[i]);
+    playlist.push({file:arr[i], name:name, url:url});
+
+    var div=document.createElement('div');
+    div.className='track-item';
+    div.textContent=name;
+    div.dataset.idx=i;
+    div.addEventListener('click',function(){playTrack(parseInt(this.dataset.idx));});
+    tracklistEl.appendChild(div);
+  }
+
+  if(playlist.length>1) tracklistEl.style.display='block';
+}
+
+function beginWithFiles(files) {
+  if(started&&playlist.length>0){
+    // Already playing: add to playlist or replace
+    buildPlaylist(files);
+    playTrack(0);
+    return;
+  }
+  buildPlaylist(files);
+  if(playlist.length===0){showError('No audio files found');return;}
+  started=true;
+  document.getElementById('start-overlay').classList.add('hidden');
+  var _ml=document.getElementById('mic-link'); if(_ml) _ml.classList.add('hidden');
+  bottomBar.style.display='flex';
+  playTrack(0);
+}
+
+function beginWithMic() {
+  if(started)return;
+  setStatus('requesting mic...');
+  initMic().then(function(ok){
+    if(!ok){document.getElementById('mic-label').textContent='Mic denied';return;}
+    started=true;
+    document.getElementById('start-overlay').classList.add('hidden');
+    var _ml2=document.getElementById('mic-link'); if(_ml2) _ml2.classList.add('hidden');
+    bottomBar.style.display='flex';
+    document.getElementById('bb-track').textContent='microphone';
+    document.getElementById('bb-pp').style.display='none';
+    document.getElementById('bb-prev').style.display='none';
+    document.getElementById('bb-next').style.display='none';
+    setStatus('listening — click center to change mode');
+  });
+}
+
+fileInput.addEventListener('change',function(){if(fileInput.files.length>0)beginWithFiles(fileInput.files);});
+var micLink = document.getElementById('mic-link');
+if (micLink) micLink.addEventListener('click', beginWithMic);
+document.getElementById('bb-pp').addEventListener('click',togglePlay);
+document.getElementById('bb-prev').addEventListener('click',prevTrack);
+document.getElementById('bb-next').addEventListener('click',nextTrack);
+
+// (Sand/water toggle removed — sand only.)
+
+// ═══════════════════════════════════════════════════
+// STEEL DRUM CONTROL (bottom-right)
+//   - center zone click  → toggle sand/water
+//   - outer wedge click  → cycle filter mode
+//   - long press         → reset sand
+// ═══════════════════════════════════════════════════
+var drumWrap = document.getElementById('drum-wrap');
+var drumGlow = document.getElementById('drum-glow');
+var drumZoneLabel = document.getElementById('drum-zone');
+var drumLedsG = document.getElementById('drum-leds');
+var drumRipplesG = document.getElementById('drum-ripples');
+
+// Build LEDs
+var DRUM_NUM_LEDS = 8, drumLeds = [];
+for (var li=0; li<DRUM_NUM_LEDS; li++) {
+  var ang = (li / DRUM_NUM_LEDS) * PI * 2 - PI/2;
+  var lcx = 50 + Math.cos(ang) * 38;
+  var lcy = 50 + Math.sin(ang) * 38;
+  var dot = document.createElementNS('http://www.w3.org/2000/svg','circle');
+  dot.setAttribute('cx', lcx); dot.setAttribute('cy', lcy);
+  dot.setAttribute('r', 0.9); dot.setAttribute('fill', '#fff');
+  dot.setAttribute('opacity', '0.35');
+  dot.style.filter = 'drop-shadow(0 0 1.5px rgba(255,255,255,0.6))';
+  drumLedsG.appendChild(dot);
+  drumLeds.push({el:dot, angle:ang});
+}
+
+// Zones: center = toggle water, wedges = cycle filter (labels hint which action)
+var DRUM_ZONES = [
+  { id:'N', name:'cycle mode', hue: 200, action:'filter' },
+  { id:'E', name:'cycle mode', hue: 45,  action:'filter' },
+  { id:'S', name:'cycle mode', hue: 280, action:'filter' },
+  { id:'W', name:'cycle mode', hue: 25,  action:'filter' },
+  { id:'C', name:'scatter',    hue: 160, action:'scatter' },
+];
+function drumZoneFor(nx, ny) {
+  var r = Math.sqrt(nx*nx+ny*ny);
+  if (r < 0.30) return DRUM_ZONES[4];
+  var a = Math.atan2(ny,nx);
+  var deg = ((a*180/PI)+360+90)%360;
+  if (deg<45 || deg>=315) return DRUM_ZONES[0];
+  if (deg<135) return DRUM_ZONES[1];
+  if (deg<225) return DRUM_ZONES[2];
+  return DRUM_ZONES[3];
+}
+
+var drumLastNx=0, drumLastNy=0, drumInside=false, drumCurrentZone=null;
+
+function drumUpdatePointer(e) {
+  var rect = drumWrap.getBoundingClientRect();
+  var x = e.clientX-rect.left, y = e.clientY-rect.top;
+  var cxx = rect.width/2, cyy = rect.height/2;
+  var nx = (x-cxx)/cxx, ny = (y-cyy)/cyy;
+  drumInside = Math.sqrt(nx*nx+ny*ny) <= 1;
+  drumLastNx = nx; drumLastNy = ny;
+  drumGlow.style.left = (x-rect.width*0.3)+'px';
+  drumGlow.style.top  = (y-rect.height*0.3)+'px';
+  var z = drumInside ? drumZoneFor(nx,ny) : null;
+  if (z) {
+    drumGlow.style.background = 'radial-gradient(circle, hsla('+z.hue+',70%,70%,0.4), transparent 60%)';
+    if (!drumCurrentZone || drumCurrentZone.id !== z.id) {
+      drumCurrentZone = z;
+      drumZoneLabel.textContent = z.name;
+      drumZoneLabel.style.color = 'hsla('+z.hue+',60%,75%,0.8)';
+      drumHighlightLEDs(nx, ny, z);
+    }
+  } else {
+    drumCurrentZone = null;
+    drumZoneLabel.innerHTML = '&nbsp;';
+    drumResetLEDs();
+  }
+}
+function drumHighlightLEDs(nx, ny, zone) {
+  var pa = Math.atan2(ny,nx);
+  for (var i=0;i<drumLeds.length;i++) {
+    var l = drumLeds[i];
+    var d = Math.abs(((l.angle - pa + PI)%(PI*2))-PI);
+    var prox = Math.max(0, 1 - d/(PI/3));
+    l.el.setAttribute('opacity', 0.3 + prox*0.7);
+    l.el.setAttribute('fill', 'hsl('+zone.hue+','+(30+prox*40)+'%,'+(80+prox*15)+'%)');
+    l.el.setAttribute('r', 0.9 + prox*0.6);
+  }
+}
+function drumResetLEDs() {
+  for (var i=0;i<drumLeds.length;i++) {
+    drumLeds[i].el.setAttribute('opacity', 0.35);
+    drumLeds[i].el.setAttribute('fill', '#fff');
+    drumLeds[i].el.setAttribute('r', 0.9);
+  }
+}
+function drumFlashLEDs(zone) {
+  for (var i=0;i<drumLeds.length;i++) {
+    var el = drumLeds[i].el;
+    var orig = el.getAttribute('opacity');
+    el.setAttribute('opacity','1');
+    el.setAttribute('fill','hsl('+zone.hue+',80%,88%)');
+    (function(e,o){setTimeout(function(){e.setAttribute('opacity',o);},260);})(el,orig);
+  }
+}
+function drumSpawnRipple(nx, ny, zone) {
+  var rcx = 50+nx*50, rcy = 50+ny*50;
+  var c = document.createElementNS('http://www.w3.org/2000/svg','circle');
+  c.setAttribute('cx',rcx); c.setAttribute('cy',rcy);
+  c.setAttribute('r',2); c.setAttribute('fill','none');
+  c.setAttribute('stroke','hsl('+zone.hue+',70%,75%)');
+  c.setAttribute('stroke-width','0.4'); c.setAttribute('opacity','0.9');
+  drumRipplesG.appendChild(c);
+  var start = performance.now(), dur = 900;
+  function step(now){
+    var t = (now-start)/dur;
+    if (t>=1) { c.remove(); return; }
+    c.setAttribute('r', 2 + t*55);
+    c.setAttribute('opacity', 0.9*(1-t));
+    c.setAttribute('stroke-width', 0.6*(1-t)+0.1);
+    requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+drumWrap.addEventListener('mousemove', drumUpdatePointer);
+drumWrap.addEventListener('mouseleave', function(){
+  drumInside=false; drumCurrentZone=null;
+  drumZoneLabel.innerHTML='&nbsp;'; drumResetLEDs();
+  drumWrap.classList.remove('press');
+  if(pressTimer){clearTimeout(pressTimer);pressTimer=null;}
+});
+
+drumWrap.addEventListener('mousedown', function(e){
+  drumWrap.classList.add('press');
+  if (!started) return; // no long-press reset before we've started
+  pressStart = Date.now(); didLongPress=false;
+  pressTimer = setTimeout(function(){ didLongPress=true; resetSand(); }, LONG_PRESS_MS);
+});
+drumWrap.addEventListener('mouseup', function(e){
+  drumWrap.classList.remove('press');
+  if(pressTimer){clearTimeout(pressTimer);pressTimer=null;}
+  if (didLongPress) return;
+  drumUpdatePointer(e);
+  if (!drumInside) return;
+  // Before start: drum is the loader — open file picker
+  if (!started) { fileInput.click(); return; }
+  var z = drumZoneFor(drumLastNx, drumLastNy);
+  drumSpawnRipple(drumLastNx, drumLastNy, z);
+  drumFlashLEDs(z);
+  if (z.action === 'scatter') resetSand();
+  else cycleFilter();
+});
+
+// Drag/drop onto the drum (preferred) — also shows dimple highlight
+drumWrap.addEventListener('dragover', function(e){
+  e.preventDefault(); e.stopPropagation();
+  drumWrap.classList.add('dragover');
+});
+drumWrap.addEventListener('dragleave', function(e){
+  drumWrap.classList.remove('dragover');
+});
+drumWrap.addEventListener('drop', function(e){
+  e.preventDefault(); e.stopPropagation();
+  drumWrap.classList.remove('dragover');
+  if (e.dataTransfer.files.length>0) beginWithFiles(e.dataTransfer.files);
+});
+
+function showDrum(){ /* drum is always visible now */ }
+
+// Global drop (swap album anytime)
+document.body.addEventListener('dragover',function(e){e.preventDefault();});
+document.body.addEventListener('drop',function(e){
+  e.preventDefault();
+  if(e.dataTransfer.files.length>0)beginWithFiles(e.dataTransfer.files);
+});
+
+setStatus('starting...');
+targetDef=0; targetPatIdx=0;
+render();
+
+}catch(err){
+  var el=document.getElementById('error');
+  if(el){el.style.display='block';el.textContent='Error: '+err.message;}
+  console.error(err);
+}
+</script>
+</body>
+</html>
