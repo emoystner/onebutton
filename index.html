@@ -110,6 +110,32 @@
     color: rgba(255,255,255,0.18); padding-left: 10px;
     border-left: 1px solid rgba(255,255,255,0.06);
   }
+  #bb-vol {
+    display: flex; align-items: center; gap: 6px;
+    padding-left: 10px; border-left: 1px solid rgba(255,255,255,0.06);
+  }
+  #bb-vol-icon {
+    font-size: 10px; color: rgba(255,255,255,0.2); cursor: pointer;
+  }
+  #bb-vol-slider {
+    -webkit-appearance: none; appearance: none;
+    width: 60px; height: 3px; border-radius: 2px;
+    background: rgba(255,255,255,0.1); outline: none;
+    cursor: pointer;
+  }
+  #bb-vol-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 10px; height: 10px; border-radius: 50%;
+    background: rgba(255,255,255,0.3); border: 1px solid rgba(255,255,255,0.15);
+    transition: background 0.2s;
+  }
+  #bb-vol-slider::-webkit-slider-thumb:hover {
+    background: rgba(255,255,255,0.5);
+  }
+  #bb-vol-slider::-moz-range-thumb {
+    width: 10px; height: 10px; border-radius: 50%; border: none;
+    background: rgba(255,255,255,0.3);
+  }
 
   /* ── Steel drum control (bottom right) ── */
   #drum-wrap {
@@ -214,6 +240,10 @@
   <div class="bb-btn" id="bb-next" title="Next">&#9654;</div>
   <div id="bb-track"></div>
   <div id="bb-mode">VOICE</div>
+  <div id="bb-vol">
+    <div id="bb-vol-icon" title="Mute/Unmute">&#128264;</div>
+    <input type="range" id="bb-vol-slider" min="0" max="100" value="80" title="Volume">
+  </div>
 </div>
 
 <div id="drum-wrap" aria-label="Control">
@@ -465,7 +495,7 @@ var audioEnergy=0, frameCount=0;
 var prevSpectrum=null, spectralFlux=0, smoothFlux=0;
 var patternAccum=0; // slow accumulator that always advances
 var mSX=-100, mSY=-100, mBX=-100, mBY=-100, trail=[];
-var analyser=null, freqData=null, audioCtx=null;
+var analyser=null, freqData=null, audioCtx=null, volumeNode=null;
 var smoothB={bass:0,low:0,mid:0,high:0};
 var audioEl=null, audioMode=null;
 var bq1=null, bq2=null, bq3=null;
@@ -587,8 +617,9 @@ function playTrack(idx) {
 
   audioEl.addEventListener('canplaythrough', function() {
     mediaSource=audioCtx.createMediaElementSource(audioEl);
+    if (!volumeNode) { volumeNode=audioCtx.createGain(); volumeNode.gain.value=0.8; }
     mediaSource.connect(bq1); bq1.connect(bq2); bq2.connect(bq3);
-    bq3.connect(analyser); analyser.connect(audioCtx.destination);
+    bq3.connect(analyser); analyser.connect(volumeNode); volumeNode.connect(audioCtx.destination);
     audioMode='file';
     audioEl.play();
     if (audioCtx.state==='suspended') audioCtx.resume();
@@ -1006,6 +1037,28 @@ if (micLink) micLink.addEventListener('click', beginWithMic);
 document.getElementById('bb-pp').addEventListener('click',togglePlay);
 document.getElementById('bb-prev').addEventListener('click',prevTrack);
 document.getElementById('bb-next').addEventListener('click',nextTrack);
+
+// ── Volume slider ──
+var volSlider = document.getElementById('bb-vol-slider');
+var volIcon = document.getElementById('bb-vol-icon');
+var savedVol = 0.8;
+volSlider.addEventListener('input', function() {
+  var v = this.value / 100;
+  if (volumeNode) volumeNode.gain.value = v;
+  volIcon.innerHTML = v === 0 ? '&#128263;' : v < 0.4 ? '&#128264;' : '&#128266;';
+});
+volIcon.addEventListener('click', function() {
+  if (volumeNode && volumeNode.gain.value > 0) {
+    savedVol = volumeNode.gain.value;
+    volumeNode.gain.value = 0;
+    volSlider.value = 0;
+    volIcon.innerHTML = '&#128263;';
+  } else if (volumeNode) {
+    volumeNode.gain.value = savedVol;
+    volSlider.value = Math.round(savedVol * 100);
+    volIcon.innerHTML = savedVol < 0.4 ? '&#128264;' : '&#128266;';
+  }
+});
 
 // (Sand/water toggle removed — sand only.)
 
